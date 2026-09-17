@@ -150,9 +150,7 @@
 
   <script>
     // Server Auto-Detect Logic (Localhost vs Deployed Host)
-    const SERVER_URL = window.location.origin.includes('localhost') 
-      ? 'http://localhost:3000' 
-      : window.location.origin;
+    const SERVER_URL = 'https://nexus-stream-backend.onrender.com';
 
     const socket = io(SERVER_URL);
     let localStream, peer, dataConn, mediaCall;
