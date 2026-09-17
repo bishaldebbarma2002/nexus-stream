@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>NexusStream - Random P2P Video Chat</title>
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <style>
+    :root {
+      --bg-color: #0f172a;
+      --card-bg: rgba(30, 41, 59, 0.85);
+      --accent: #6366f1;
+      --accent-hover: #4f46e5;
+      --danger: #ef4444;
+      --danger-hover: #dc2626;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', system-ui, sans-serif; }
+    body { background-color: var(--bg-color); color: var(--text); height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+
+    /* Header Bar */
+    header { position: absolute; top: 16px; left: 16px; z-index: 20; display: flex; align-items: center; gap: 12px; background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(12px); padding: 8px 16px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); }
+    .logo { font-size: 0.95rem; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 8px; letter-spacing: 0.5px; }
+    .logo i { color: var(--accent); }
+    .header-divider { width: 1px; height: 14px; background: rgba(255,255,255,0.2); }
+    .status-badge { font-size: 0.8rem; font-weight: 500; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #eab308; }
+    .status-dot.connected { background: #22c55e; }
+
+    /* Layout */
+    .app-container { width: 100%; height: 100%; display: flex; position: relative; }
+
+    /* Desktop Video View */
+    .video-section { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 16px; padding-top: 64px; height: 100%; position: relative; }
+    .video-wrapper { background: #1e293b; border-radius: 16px; overflow: hidden; position: relative; border: 1px solid #334155; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
+    video { width: 100%; height: 100%; object-fit: cover; }
+    .video-label { position: absolute; bottom: 12px; left: 12px; background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(8px); padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; border: 1px solid rgba(255,255,255,0.1); z-index: 5; }
+
+    /* Floating Controls */
+    .controls-overlay { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 20; display: flex; align-items: center; gap: 12px; background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(12px); padding: 10px 20px; border-radius: 40px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5); }
+    .btn { border: none; outline: none; border-radius: 50%; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease; width: 48px; height: 48px; font-size: 1.1rem; }
+    .btn-secondary { background: #334155; color: #f8fafc; }
+    .btn-secondary:hover { background: #475569; }
+    .btn-danger { background: var(--danger); color: white; width: auto; padding: 0 20px; border-radius: 24px; font-size: 0.9rem; }
+    .btn-danger:hover:not(:disabled) { background: var(--danger-hover); }
+    .btn-off { background: var(--danger) !important; color: white !important; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Desktop Chat Drawer */
+    .chat-section { width: 360px; background: var(--card-bg); backdrop-filter: blur(16px); border-left: 1px solid #334155; display: flex; flex-direction: column; height: 100%; transition: all 0.3s ease; z-index: 30; }
+    .chat-header { padding: 16px; border-bottom: 1px solid #334155; font-weight: 600; font-size: 0.9rem; display: flex; justify-content: space-between; align-items: center; }
+    .close-chat-btn { display: none; background: transparent; border: none; color: var(--text); font-size: 1.1rem; cursor: pointer; }
+    
+    .chat-box { flex: 1; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+    .chat-box::-webkit-scrollbar { width: 4px; }
+    .chat-box::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+
+    .msg { max-width: 85%; padding: 8px 12px; border-radius: 12px; font-size: 0.85rem; line-height: 1.4; word-break: break-word; }
+    .msg-you { background: var(--accent); color: white; align-self: flex-end; border-bottom-right-radius: 2px; }
+    .msg-stranger { background: #334155; color: var(--text); align-self: flex-start; border-bottom-left-radius: 2px; }
+    .msg-system { background: transparent; color: var(--text-muted); align-self: center; font-size: 0.75rem; font-style: italic; text-align: center; }
+
+    .chat-input-area { padding: 12px; border-top: 1px solid #334155; display: flex; gap: 8px; }
+    .chat-input-area input { flex: 1; background: #0f172a; border: 1px solid #334155; padding: 10px 14px; border-radius: 8px; color: white; outline: none; font-size: 0.85rem; }
+    .btn-send { background: var(--accent); color: white; width: 40px; height: 40px; border-radius: 8px; }
+
+    /* Mobile Chat Toggle Button */
+    .chat-toggle-btn { display: none; position: absolute; top: 16px; right: 16px; z-index: 20; background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(10px); color: white; border: 1px solid rgba(255,255,255,0.1); width: 44px; height: 44px; border-radius: 50%; font-size: 1.1rem; }
+
+    /* Mobile Fullscreen Responsive */
+    @media (max-width: 768px) {
+      .video-section { display: block; padding: 0; position: absolute; inset: 0; }
+      
+      .video-wrapper.remote-wrapper { position: absolute; inset: 0; border-radius: 0; border: none; }
+      .video-wrapper.local-wrapper { position: absolute; bottom: 90px; right: 16px; width: 110px; height: 160px; border-radius: 12px; z-index: 10; box-shadow: 0 8px 20px rgba(0,0,0,0.6); border: 2px solid rgba(255,255,255,0.2); }
+      .video-wrapper.local-wrapper .video-label { display: none; }
+
+      .controls-overlay { bottom: 16px; padding: 8px 16px; width: calc(100% - 32px); max-width: 380px; justify-content: space-around; }
+      .btn-danger { width: 48px; height: 48px; padding: 0; border-radius: 50%; font-size: 1.1rem; }
+      .btn-danger span { display: none; }
+
+      .chat-toggle-btn { display: flex; align-items: center; justify-content: center; }
+      .close-chat-btn { display: block; }
+
+      .chat-section { position: absolute; inset: 0; width: 100%; height: 100%; transform: translateY(100%); background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(20px); }
+      .chat-section.active { transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="logo"><i class="fa-solid fa-bolt"></i> NexusStream</div>
+    <div class="header-divider"></div>
+    <div class="status-badge">
+      <div class="status-dot" id="statusDot"></div>
+      <span id="statusText">Initializing...</span>
+    </div>
+  </header>
+
+  <button class="chat-toggle-btn" onclick="toggleChatDrawer()">
+    <i class="fa-regular fa-comments"></i>
+  </button>
+
+  <div class="app-container">
+    <div class="video-section">
+      <div class="video-wrapper remote-wrapper">
+        <video id="remoteVideo" autoplay playsinline></video>
+        <div class="video-label">Stranger</div>
+      </div>
+      <div class="video-wrapper local-wrapper">
+        <video id="localVideo" autoplay muted playsinline></video>
+        <div class="video-label">You</div>
+      </div>
+
+      <div class="controls-overlay">
+        <button class="btn btn-secondary" id="toggleMicBtn" onclick="toggleMic()">
+          <i class="fa-solid fa-microphone" id="micIcon"></i>
+        </button>
+
+        <button class="btn btn-secondary" id="toggleCamBtn" onclick="toggleCam()">
+          <i class="fa-solid fa-video" id="camIcon"></i>
+        </button>
+
+        <button class="btn btn-danger" id="skipBtn" onclick="skipPartner()" disabled>
+          <i class="fa-solid fa-forward"></i>
+          <span>Skip Stranger</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="chat-section" id="chatSection">
+      <div class="chat-header">
+        <span><i class="fa-regular fa-comments"></i> Live Chat</span>
+        <button class="close-chat-btn" onclick="toggleChatDrawer()"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="chat-box" id="chatBox"></div>
+      <div class="chat-input-area">
+        <input type="text" id="messageInput" placeholder="Type a message..." disabled />
+        <button class="btn btn-send" id="sendBtn" onclick="sendMessage()" disabled>
+          <i class="fa-solid fa-paper-plane"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Server Auto-Detect Logic (Localhost vs Deployed Host)
+    const SERVER_URL = window.location.origin.includes('localhost') 
+      ? 'http://localhost:3000' 
+      : window.location.origin;
+
+    const socket = io(SERVER_URL);
+    let localStream, peer, dataConn, mediaCall;
+    let isMicMuted = false;
+    let isCamOff = false;
+
+    const chatBox = document.getElementById('chatBox');
+    const statusText = document.getElementById('statusText');
+    const statusDot = document.getElementById('statusDot');
+    const messageInput = document.getElementById('messageInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const skipBtn = document.getElementById('skipBtn');
+    const chatSection = document.getElementById('chatSection');
+
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then((stream) => {
+      localStream = stream;
+      document.getElementById('localVideo').srcObject = stream;
+
+      // Google Free STUN Servers config taaki mobile networks par connection break na ho
+      peer = new Peer({
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' }
+          ]
+        }
+      });
+
+      peer.on('open', (id) => {
+        updateStatus('Searching...', false);
+        socket.emit('find-match', id);
+      });
+
+      peer.on('call', (call) => {
+        mediaCall = call;
+        call.answer(localStream);
+        call.on('stream', (remoteStream) => {
+          document.getElementById('remoteVideo').srcObject = remoteStream;
+        });
+      });
+
+      peer.on('connection', (conn) => {
+        dataConn = conn;
+        setupChatConnection();
+      });
+    }).catch(err => {
+      updateStatus('Camera Access Denied!', false);
+      alert('Camera aur Microphone permissions allow karein.');
+    });
+
+    socket.on('match-found', ({ partnerPeerId, initiator }) => {
+      updateStatus('Connected', true);
+      skipBtn.disabled = false;
+
+      if (initiator) {
+        mediaCall = peer.call(partnerPeerId, localStream);
+        mediaCall.on('stream', (remoteStream) => {
+          document.getElementById('remoteVideo').srcObject = remoteStream;
+        });
+
+        dataConn = peer.connect(partnerPeerId);
+        setupChatConnection();
+      }
+    });
+
+    socket.on('waiting', () => {
+      updateStatus('Searching...', false);
+      resetMediaAndChat();
+    });
+
+    socket.on('partner-disconnected', () => {
+      appendChatMessage('system', 'Partner disconnected.');
+      resetMediaAndChat();
+      updateStatus('Partner left.', false);
+    });
+
+    function setupChatConnection() {
+      dataConn.on('open', () => {
+        messageInput.disabled = false;
+        sendBtn.disabled = false;
+        appendChatMessage('system', 'Connected to a stranger!');
+      });
+
+      dataConn.on('data', (data) => appendChatMessage('stranger', data));
+      dataConn.on('close', () => {
+        messageInput.disabled = true;
+        sendBtn.disabled = true;
+      });
+    }
+
+    function toggleMic() {
+      if (!localStream) return;
+      const audioTrack = localStream.getAudioTracks()[0];
+      if (audioTrack) {
+        isMicMuted = !isMicMuted;
+        audioTrack.enabled = !isMicMuted;
+
+        const micBtn = document.getElementById('toggleMicBtn');
+        const micIcon = document.getElementById('micIcon');
+        
+        if (isMicMuted) {
+          micBtn.classList.add('btn-off');
+          micIcon.className = 'fa-solid fa-microphone-slash';
+        } else {
+          micBtn.classList.remove('btn-off');
+          micIcon.className = 'fa-solid fa-microphone';
+        }
+      }
+    }
+
+    function toggleCam() {
+      if (!localStream) return;
+      const videoTrack = localStream.getVideoTracks()[0];
+      if (videoTrack) {
+        isCamOff = !isCamOff;
+        videoTrack.enabled = !isCamOff;
+
+        const camBtn = document.getElementById('toggleCamBtn');
+        const camIcon = document.getElementById('camIcon');
+
+        if (isCamOff) {
+          camBtn.classList.add('btn-off');
+          camIcon.className = 'fa-solid fa-video-slash';
+        } else {
+          camBtn.classList.remove('btn-off');
+          camIcon.className = 'fa-solid fa-video';
+        }
+      }
+    }
+
+    function toggleChatDrawer() {
+      chatSection.classList.toggle('active');
+    }
+
+    function sendMessage() {
+      const msg = messageInput.value.trim();
+      if (msg && dataConn && dataConn.open) {
+        dataConn.send(msg);
+        appendChatMessage('you', msg);
+        messageInput.value = '';
+      }
+    }
+
+    function skipPartner() {
+      resetMediaAndChat();
+      socket.emit('skip');
+      socket.emit('find-match', peer.id);
+      updateStatus('Searching...', false);
+    }
+
+    function resetMediaAndChat() {
+      if (dataConn) dataConn.close();
+      if (mediaCall) mediaCall.close();
+      document.getElementById('remoteVideo').srcObject = null;
+      messageInput.disabled = true;
+      sendBtn.disabled = true;
+      skipBtn.disabled = true;
+    }
+
+    function updateStatus(text, isConnected) {
+      statusText.innerText = text;
+      if (isConnected) {
+        statusDot.classList.add('connected');
+      } else {
+        statusDot.classList.remove('connected');
+      }
+    }
+
+    function appendChatMessage(type, text) {
+      const msgDiv = document.createElement('div');
+      msgDiv.classList.add('msg');
+      if (type === 'you') msgDiv.classList.add('msg-you');
+      else if (type === 'stranger') msgDiv.classList.add('msg-stranger');
+      else msgDiv.classList.add('msg-system');
+
+      msgDiv.innerText = text;
+      chatBox.appendChild(msgDiv);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    messageInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') sendMessage();
+    });
+  </script>
+</body>
+</html>
